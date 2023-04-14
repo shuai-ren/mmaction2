@@ -1,0 +1,1 @@
+python demo/webcam_demo_http_stream.py --config configs/recognition/tsm/tsm_imagenet-pretrained-r50_8xb16-1x1x8-50e_custom-rgb.py --checkpoint epoch_50.pth --label data/custom/labels.txt --threshold 0.5 --port 65522 --video new.mp4

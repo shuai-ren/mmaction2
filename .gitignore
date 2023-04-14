@@ -116,6 +116,7 @@ work_dirs/
 /projects/*/work_dirs
 /projects/*/data
 .DS_Store
+/videos
 
 # Pytorch
 *.pth
