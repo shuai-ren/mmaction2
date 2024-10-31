@@ -31,16 +31,13 @@ class AccMetric(BaseMetric):
     """Accuracy evaluation metric."""
     default_prefix: Optional[str] = 'acc'
 
-    def __init__(
-            self,
-            metric_list: Optional[Union[str,
-                                        Tuple[str]]] = ('top_k_accuracy',
-                                                        'mean_class_accuracy'),
-            collect_device: str = 'cpu',
-            metric_options: Optional[Dict] = dict(
-                top_k_accuracy=dict(topk=(1, 5))),
-            prefix: Optional[str] = None,
-            num_classes: Optional[int] = None):
+    def __init__(self,
+                 metric_list: Optional[Union[str, Tuple[str]]] = (
+                     'top_k_accuracy', 'mean_class_accuracy'),
+                 collect_device: str = 'cpu',
+                 metric_options: Optional[Dict] = dict(
+                     top_k_accuracy=dict(topk=(1, 5))),
+                 prefix: Optional[str] = None) -> None:
 
         # TODO: fix the metric_list argument with a better one.
         # `metrics` is not a safe argument here with mmengine.
@@ -62,14 +59,8 @@ class AccMetric(BaseMetric):
                 'mmit_mean_average_precision', 'mean_average_precision'
             ]
 
-            if metric in [
-                    'mmit_mean_average_precision', 'mean_average_precision'
-            ]:
-                assert type(num_classes) == int
-
         self.metrics = metrics
         self.metric_options = metric_options
-        self.num_classes = num_classes
 
     def process(self, data_batch: Sequence[Tuple[Any, Dict]],
                 data_samples: Sequence[Dict]) -> None:
@@ -84,12 +75,23 @@ class AccMetric(BaseMetric):
         data_samples = copy.deepcopy(data_samples)
         for data_sample in data_samples:
             result = dict()
-            pred = data_sample['pred_scores']
-            label = data_sample['gt_labels']
-            for item_name, score in pred.items():
-                pred[item_name] = score.cpu().numpy()
+            pred = data_sample['pred_score']
+            label = data_sample['gt_label']
+
+            # Ad-hoc for RGBPoseConv3D
+            if isinstance(pred, dict):
+                for item_name, score in pred.items():
+                    pred[item_name] = score.cpu().numpy()
+            else:
+                pred = pred.cpu().numpy()
+
             result['pred'] = pred
-            result['label'] = label['item'].item()
+            if label.size(0) == 1:
+                # single-label
+                result['label'] = label.item()
+            else:
+                # multi-label
+                result['label'] = label.cpu().numpy()
             self.results.append(result)
 
     def compute_metrics(self, results: List) -> Dict:
@@ -104,46 +106,49 @@ class AccMetric(BaseMetric):
         """
         labels = [x['label'] for x in results]
 
-        if len(results[0]['pred']) == 1:
-            preds = [x['pred']['item'] for x in results]
+        eval_results = dict()
+        # Ad-hoc for RGBPoseConv3D
+        if isinstance(results[0]['pred'], dict):
+
+            for item_name in results[0]['pred'].keys():
+                preds = [x['pred'][item_name] for x in results]
+                eval_result = self.calculate(preds, labels)
+                eval_results.update(
+                    {f'{item_name}_{k}': v
+                     for k, v in eval_result.items()})
+
+            if len(results[0]['pred']) == 2 and \
+                    'rgb' in results[0]['pred'] and \
+                    'pose' in results[0]['pred']:
+
+                rgb = [x['pred']['rgb'] for x in results]
+                pose = [x['pred']['pose'] for x in results]
+
+                preds = {
+                    '1:1': get_weighted_score([rgb, pose], [1, 1]),
+                    '2:1': get_weighted_score([rgb, pose], [2, 1]),
+                    '1:2': get_weighted_score([rgb, pose], [1, 2])
+                }
+                for k in preds:
+                    eval_result = self.calculate(preds[k], labels)
+                    eval_results.update({
+                        f'RGBPose_{k}_{key}': v
+                        for key, v in eval_result.items()
+                    })
+            return eval_results
+
+        # Simple Acc Calculation
+        else:
+            preds = [x['pred'] for x in results]
             return self.calculate(preds, labels)
 
-        eval_results = dict()
-        for item_name in results[0]['pred'].keys():
-            preds = [x['pred'][item_name] for x in results]
-            eval_result = self.calculate(preds, labels)
-            eval_results.update(
-                {f'{item_name}_{k}': v
-                 for k, v in eval_result.items()})
-
-        # Ad-hoc for RGBPoseConv3D
-        if len(results[0]['pred']) == 2 and \
-                'rgb' in results[0]['pred'] and \
-                'pose' in results[0]['pred']:
-
-            rgb = [x['pred']['rgb'] for x in results]
-            pose = [x['pred']['pose'] for x in results]
-
-            preds = {
-                '1:1': get_weighted_score([rgb, pose], [1, 1]),
-                '2:1': get_weighted_score([rgb, pose], [2, 1]),
-                '1:2': get_weighted_score([rgb, pose], [1, 2])
-            }
-            for k in preds:
-                eval_result = self.calculate(preds[k], labels)
-                eval_results.update({
-                    f'RGBPose_{k}_{key}': v
-                    for key, v in eval_result.items()
-                })
-
-        return eval_results
-
-    def calculate(self, preds: List[np.ndarray], labels: List[int]) -> Dict:
+    def calculate(self, preds: List[np.ndarray],
+                  labels: List[Union[int, np.ndarray]]) -> Dict:
         """Compute the metrics from processed results.
 
         Args:
             preds (list[np.ndarray]): List of the prediction scores.
-            labels (list[int]): List of the labels.
+            labels (list[int | np.ndarray]): List of the labels.
 
         Returns:
             dict: The computed metrics. The keys are the names of the metrics,
@@ -176,27 +181,15 @@ class AccMetric(BaseMetric):
                     'mean_average_precision',
                     'mmit_mean_average_precision',
             ]:
-                gt_labels_arrays = [
-                    self.label2array(self.num_classes, label)
-                    for label in labels
-                ]
-
                 if metric == 'mean_average_precision':
-                    mAP = mean_average_precision(preds, gt_labels_arrays)
+                    mAP = mean_average_precision(preds, labels)
                     eval_results['mean_average_precision'] = mAP
 
                 elif metric == 'mmit_mean_average_precision':
-                    mAP = mmit_mean_average_precision(preds, gt_labels_arrays)
+                    mAP = mmit_mean_average_precision(preds, labels)
                     eval_results['mmit_mean_average_precision'] = mAP
 
         return eval_results
-
-    @staticmethod
-    def label2array(num, label):
-        """Convert multi-label to array."""
-        arr = np.zeros(num, dtype=np.float32)
-        arr[label] = 1.
-        return arr
 
 
 @METRICS.register_module()
@@ -253,13 +246,13 @@ class ConfusionMatrix(BaseMetric):
 
     def process(self, data_batch, data_samples: Sequence[dict]) -> None:
         for data_sample in data_samples:
-            pred_scores = data_sample.get('pred_scores')
-            gt_label = data_sample['gt_labels']['item']
+            pred_scores = data_sample.get('pred_score')
+            gt_label = data_sample['gt_label']
             if pred_scores is not None:
-                pred_label = pred_scores['item'].argmax(dim=0, keepdim=True)
-                self.num_classes = pred_scores['item'].size(0)
+                pred_label = pred_scores.argmax(dim=0, keepdim=True)
+                self.num_classes = pred_scores.size(0)
             else:
-                pred_label = data_sample['pred_labels']['item']
+                pred_label = data_sample['pred_label']
 
             self.results.append({
                 'pred_label': pred_label,

@@ -6,6 +6,8 @@ import os.path as osp
 from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
+from mmaction.registry import RUNNERS
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a action recognizer')
@@ -16,7 +18,7 @@ def parse_args():
         nargs='?',
         type=str,
         const='auto',
-        help='If specify checkpint path, resume from it, while if not '
+        help='If specify checkpoint path, resume from it, while if not '
         'specify, try to auto resume from the latest checkpoint '
         'in the work directory.')
     parser.add_argument(
@@ -125,7 +127,13 @@ def main():
     cfg = merge_args(cfg, args)
 
     # build the runner from config
-    runner = Runner.from_cfg(cfg)
+    if 'runner_type' not in cfg:
+        # build the default runner
+        runner = Runner.from_cfg(cfg)
+    else:
+        # build customized runner from the registry
+        # if 'runner_type' is set in the cfg
+        runner = RUNNERS.build(cfg)
 
     # start training
     runner.train()

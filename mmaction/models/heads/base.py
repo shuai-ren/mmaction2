@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.model import BaseModule
-from mmengine.structures import LabelData
 
 from mmaction.evaluation import top_k_accuracy
 from mmaction.registry import MODELS
@@ -112,7 +111,7 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
         Returns:
             dict: A dictionary of loss components.
         """
-        labels = [x.gt_labels.item for x in data_samples]
+        labels = [x.gt_label for x in data_samples]
         labels = torch.stack(labels).to(cls_scores.device)
         labels = labels.squeeze()
 
@@ -122,7 +121,7 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
         elif labels.dim() == 1 and labels.size()[0] == self.num_classes \
                 and cls_scores.size()[0] == 1:
             # Fix a bug when training with soft labels and batch size is 1.
-            # When using soft labels, `labels` and `cls_socre` share the same
+            # When using soft labels, `labels` and `cls_score` share the same
             # shape.
             labels = labels.unsqueeze(0)
 
@@ -175,7 +174,7 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
                 (B*num_segs, num_classes)
             data_samples (list[:obj:`ActionDataSample`]): The
                 annotation data of every samples. It usually includes
-                information such as `gt_labels`.
+                information such as `gt_label`.
 
         Returns:
             List[:obj:`ActionDataSample`]: Recognition results wrapped
@@ -187,10 +186,8 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
 
         for data_sample, score, pred_label in zip(data_samples, cls_scores,
                                                   pred_labels):
-            prediction = LabelData(item=score)
-            pred_label = LabelData(item=pred_label)
-            data_sample.pred_scores = prediction
-            data_sample.pred_labels = pred_label
+            data_sample.set_pred_score(score)
+            data_sample.set_pred_label(pred_label)
         return data_samples
 
     def average_clip(self,
@@ -216,7 +213,8 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
                              f'["score", "prob", None]')
 
         batch_size = cls_scores.shape[0]
-        cls_scores = cls_scores.view(batch_size // num_segs, num_segs, -1)
+        cls_scores = cls_scores.view((batch_size // num_segs, num_segs) +
+                                     cls_scores.shape[1:])
 
         if self.average_clips is None:
             return cls_scores

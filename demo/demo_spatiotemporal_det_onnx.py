@@ -13,7 +13,7 @@ from mmdet.structures.bbox import bbox2roi
 from mmengine import DictAction
 
 from mmaction.apis import detection_inference
-from mmaction.utils import frame_extract
+from mmaction.utils import frame_extract, get_str_type
 
 try:
     import moviepy.editor as mpy
@@ -152,8 +152,8 @@ def parse_args():
     parser.add_argument('out_filename', help='output filename')
     parser.add_argument(
         '--config',
-        default=('configs/detection/ava_kinetics/slowonly_k700-pre-'
-                 'r50_8xb8-8x8x1-10e_ava-kinetics-rgb.py'),
+        default=('configs/detection/slowonly/slowonly_k700-pre'
+                 '-r50_8xb8-8x8x1-10e_ava-kinetics-rgb.py'),
         help='spatialtemporal detection model config file path')
     parser.add_argument(
         '--onnx-file', help='spatialtemporal detection onnx file path')
@@ -242,7 +242,9 @@ def main():
     config.merge_from_dict(args.cfg_options)
     val_pipeline = config.val_pipeline
 
-    sampler = [x for x in val_pipeline if x['type'] == 'SampleAVAFrames'][0]
+    sampler = [
+        x for x in val_pipeline if get_str_type(x['type']) == 'SampleAVAFrames'
+    ][0]
     clip_len, frame_interval = sampler['clip_len'], sampler['frame_interval']
     window_size = clip_len * frame_interval
     assert clip_len % 2 == 0, 'We would like to have an even clip_len'

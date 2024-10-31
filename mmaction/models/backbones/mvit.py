@@ -14,6 +14,7 @@ from mmengine.runner.checkpoint import _load_checkpoint_with_prefix
 from mmengine.utils import to_3tuple
 
 from mmaction.registry import MODELS
+from mmaction.utils import get_str_type
 from ..utils.embed import PatchEmbed3D
 
 
@@ -328,7 +329,7 @@ class MultiScaleAttention(BaseModule):
         super().init_weights()
 
         if (isinstance(self.init_cfg, dict)
-                and self.init_cfg['type'] == 'Pretrained'):
+                and get_str_type(self.init_cfg['type']) == 'Pretrained'):
             # Suppress rel_pos_zero_init if use pretrained model.
             return
 
@@ -467,7 +468,8 @@ class MultiScaleBlock(BaseModule):
             rel_pos_embed=rel_pos_embed,
             residual_pooling=residual_pooling,
             input_size=input_size,
-            rel_pos_zero_init=rel_pos_zero_init)
+            rel_pos_zero_init=rel_pos_zero_init,
+            with_cls_token=with_cls_token)
         self.drop_path = DropPath(
             drop_path) if drop_path > 0.0 else nn.Identity()
 
@@ -802,6 +804,7 @@ class MViT(BaseModule):
                 stride_kv=stride_kv,
                 rel_pos_embed=rel_pos_embed,
                 residual_pooling=residual_pooling,
+                with_cls_token=with_cls_token,
                 dim_mul_in_attention=dim_mul_in_attention,
                 input_size=input_size,
                 rel_pos_zero_init=rel_pos_zero_init)
@@ -852,7 +855,7 @@ class MViT(BaseModule):
             super().init_weights()
 
             if (isinstance(self.init_cfg, dict)
-                    and self.init_cfg['type'] == 'Pretrained'):
+                    and get_str_type(self.init_cfg['type']) == 'Pretrained'):
                 # Suppress default init if use pretrained model.
                 return
 
