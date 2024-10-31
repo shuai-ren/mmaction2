@@ -1,0 +1,11 @@
+from openmmlab/mmdeploy:ubuntu20.04-cuda11.8-mmdeploy1.3.1
+
+WORKDIR /opt
+
+RUN git clone -b v1.2.0 https://github.com/open-mmlab/mmaction2.git
+
+RUN echo "from .drn import DRN\n\n__all__ = ['DRN']" > /opt/mmaction2/mmaction/models/localizers/drn/__init__.py
+
+RUN cd /opt/mmaction2 && pip install .
+
+WORKDIR /workspace
